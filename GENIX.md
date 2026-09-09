@@ -41,14 +41,68 @@ The Genix ladder and its CI install from those releases.
 
 ## Genix patches
 
-None yet. Planned, in the order the Genix plans give them:
+Each patch is a separate commit against `main`, touching as few
+upstream files as possible so upstream merges stay clean.
 
-- A MIDI dongle port device (io.c): the nibble handshake of
-  genix/docs/plans/usb-midi-dongle.md sec 4, with a frame-script
-  source and fault injection. Plan: genix/docs/plans/midi-dongle-build.md.
+### The MIDI dongle port device (2026-09-09)
+
+`genix/genix_dongle.c` models the Genix MIDI dongle
+(genix/docs/plans/usb-midi-dongle.md sec 4; build plan
+genix/docs/plans/midi-dongle-build.md sec 4 and sec 12) as a
+controller-port device: the nibble handshake on D0-D3 / TR / TH with
+TL as the console's ack, run by `genix/link/link_tx.c`, the SAME
+handshake code the dongle firmware runs.  `genix/link/` is a copy of
+`genix/hardware/midi-dongle/link/`; the Makefile bakes a checksum of
+it into the binary and the device prints it when it attaches, so the
+Genix ladder can fail loudly on drift (`scripts/check-dongle-link.sh`
+there).  Sync the copy whenever the protocol changes:
+
+    cp ../genix/hardware/midi-dongle/link/{frame.c,frame.h,script.c,script.h,link_tx.c,link_tx.h,link_rx.h} genix/link/
+
+Upstream files touched: `io.h` (one enum value, one union member),
+`io.c` (the device string, six call sites), `blastem.c` (the `-M`
+option and its help line), `Makefile` (the objects, the checksum,
+two mkdirs).
+
+Use:
+
+    blastem -M keys.fst ROM              # a frame stream (mkframes output) on port 2
+    blastem -M midi:/dev/snd/midiC1D0 ROM  # raw MIDI bytes from a device node or FIFO
+    blastem -M keys.fst,latency=3,trace=200 ROM
+
+`latency=<us>` is the dongle's response latency after a TL edge
+(default 3; the board's number replaces it).  `trace=<n>` logs the
+first n port events (TL edges, offers, reads) to stderr with the
+model's microsecond clock: the handshake nibble by nibble.  The
+frame stream's `stall` and `detach` directives freeze the dongle
+mid-frame and unplug it for a while; the device logs each one.
+
+The model's clock is the master clock of the running context
+(53.69 MHz NTSC, 53.20 MHz PAL), kept as a 64-bit count across
+BlastEm's cycle deductions.  Two BlastEm facts the Genix side had
+to learn: `-b N` counts at about 120 a second (NTSC), not 60; and
+`io.c` restarts its slow-rise model on every control-register
+write, so an input pin whose latch holds 0 reads 0 for ~4 us after
+any direction change.  The device therefore takes TL as the
+console's latch while the console drives the pin and as the pull-up
+(high) otherwise, which is what the wire does.
+
+### Planned
+
 - The production cartridge mapper and SD card model:
   genix/hardware/production-cart/design.md secs 4-6. Plan:
   genix/docs/plans/production-cart.md sec 8.
 
-Each patch is a separate commit or PR against `main`, touching as
-few upstream files as possible so upstream merges stay clean.
+## Building here
+
+`make` needs SDL2 and GLEW development files (`pkg-config sdl2 glew
+gl`).  Without a system GLEW, build 2.2.0 into a prefix and point
+pkg-config at it:
+
+    make -C glew-2.2.0 GLEW_DEST=$PWD/glew-2.2.0/dist install
+    rm glew-2.2.0/dist/lib*/libGLEW.so*     # link it statically
+    # fix includedir= in dist/lib/pkgconfig/glew.pc to dist/include
+    PKG_CONFIG_PATH=$PWD/glew-2.2.0/dist/lib/pkgconfig make -j8 blastem
+
+The Genix ladder runs the dongle legs with
+`BLASTEM=~/github/blastem-genix/blastem` until a release is tagged.

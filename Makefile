@@ -281,7 +281,17 @@ else
 RENDEROBJS+= $(LIBZOBJS) png.o
 endif
 
-COREOBJS:=system.o genesis.o vdp.o io.o romdb.o hash.o xband.o realtec.o i2c.o nor.o $(M68KOBJS) \
+# Genix device models (GENIX.md): the MIDI dongle port device and its
+# checksummed copy of the link codec.  The checksum is printed when
+# the device attaches so the Genix ladder can compare it with its own
+# copy of hardware/midi-dongle/link/.
+GENIX_LINK_FILES:=genix/link/frame.h genix/link/frame.c genix/link/script.h genix/link/script.c \
+	genix/link/link_tx.h genix/link/link_tx.c genix/link/link_rx.h
+GENIX_LINK_SHA:=$(shell cat $(GENIX_LINK_FILES) | sha256sum | cut -c1-16)
+CFLAGS+= -DGENIX_LINK_SHA=\"$(GENIX_LINK_SHA)\"
+GENIXOBJS:=genix/genix_dongle.o genix/link/frame.o genix/link/script.o genix/link/link_tx.o
+
+COREOBJS:=system.o genesis.o vdp.o io.o romdb.o hash.o xband.o realtec.o i2c.o nor.o $(M68KOBJS) $(GENIXOBJS) \
 	sega_mapper.o multi_game.o megawifi.o $(NET) serialize.o $(TERMINAL) $(CONFIGOBJS) gst.o \
 	$(TRANSOBJS) $(AUDIOOBJS) saves.o jcart.o gen_player.o coleco.o pico_pcm.o ymz263b.o \
 	segacd.o lc8951.o cdimage.o cdd_mcu.o cd_graphics.o cdd_fader.o sft_mapper.o mediaplayer.o \
@@ -379,9 +389,11 @@ endif
 $(OBJDIR) :
 	mkdir -p $(OBJDIR)/nuklear_ui
 	mkdir -p $(OBJDIR)/zlib
+	mkdir -p $(OBJDIR)/genix/link
 
 $(LIBOBJDIR) :
 	mkdir -p $(LIBOBJDIR)/zlib
+	mkdir -p $(LIBOBJDIR)/genix/link
 
 libblastem.$(SO) : $(LIBOBJS:%.o=$(LIBOBJDIR)/%.o)
 	$(CC) -shared -o $@ $^ $(LDFLAGS)

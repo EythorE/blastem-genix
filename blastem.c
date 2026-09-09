@@ -43,6 +43,7 @@
 #endif
 
 #include "version.inc"
+#include "genix/genix_dongle.h"
 
 #ifdef __ANDROID__
 #define FULLSCREEN_DEFAULT 1
@@ -475,6 +476,13 @@ int main(int argc, char ** argv)
 			case 'n':
 				z80_enabled = 0;
 				break;
+			case 'M':
+				i++;
+				if (i >= argc) {
+					fatal_error("-M must be followed by a frame stream path or midi:<path> (genix dongle)\n");
+				}
+				genix_dongle_spec = argv[i];
+				break;
 			case 'r':
 				i++;
 				if (i >= argc) {
@@ -565,6 +573,8 @@ int main(int argc, char ** argv)
 					"	-o FILE     Load FILE as a lock-on cartridge\n"
 					"	-d          Enter debugger on startup\n"
 					"	-n          Disable Z80\n"
+					"	-M SPEC     Genix MIDI dongle on port 2 (SPEC: a frame stream file,\n"
+					"	            midi:<path> for raw MIDI bytes; ,latency=<us>)\n"
 					"	-v          Display version number and exit\n"
 					"	-l          Log 68K code addresses (useful for assemblers)\n"
 					"	-y          Log individual YM-2612 channels to WAVE files\n"

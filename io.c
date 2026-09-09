@@ -21,6 +21,7 @@
 #include "render.h"
 #include "util.h"
 #include "bindings.h"
+#include "genix/genix_dongle.h"
 
 #define CYCLE_NEVER 0xFFFFFFFF
 #define MIN_POLL_INTERVAL 6840
@@ -41,7 +42,8 @@ const char * device_type_names[] = {
 	"Sega Parallel Transfer Board",
 	"Generic Device",
 	"Generic Serial",
-	"Heartbeat Personal Trainer"
+	"Heartbeat Personal Trainer",
+	"Genix MIDI dongle"
 };
 
 #define GAMEPAD_TH0 0
@@ -312,6 +314,12 @@ void process_device(char * device_type, io_port * port)
 			port->device.keyboard.read_pos = 0xFF;
 			port->device.keyboard.write_pos = 0;
 		}
+	} else if(!strcmp(device_type, "genix_dongle")) {
+		if (port->device_type != IO_GENIX_DONGLE) {
+			port->device_type = IO_GENIX_DONGLE;
+			port->device.genix.ctx = NULL;
+			genix_dongle_attach(port);
+		}
 	} else if(!strcmp(device_type, "sega_parallel")) {
 		if (port->device_type != IO_SEGA_PARALLEL) {
 			port->device_type = IO_SEGA_PARALLEL;
@@ -386,6 +394,9 @@ void setup_io_devices(tern_node * config, rom_info *rom, sega_io *io)
 	char * io_1 = rom->port1_override ? rom->port1_override : tern_find_ptr_default(io_nodes, "1", "gamepad6.1");
 	char * io_2 = rom->port2_override ? rom->port2_override : tern_find_ptr_default(io_nodes, "2", "gamepad6.2");
 	char * io_ext = rom->ext_override ? rom->ext_override : tern_find_ptr(io_nodes, "ext");
+	if (genix_dongle_spec) {
+		io_2 = "genix_dongle";
+	}
 
 	process_device(io_1, ports);
 	process_device(io_2, ports+1);
@@ -753,6 +764,8 @@ void io_adjust_cycles(io_port * port, uint32_t current_cycle, uint32_t deduction
 		if (port->device.mouse.ready_cycle != CYCLE_NEVER) {
 			port->device.mouse.ready_cycle -= deduction;
 		}
+	} else if (port->device_type == IO_GENIX_DONGLE) {
+		genix_dongle_adjust_cycles(port, deduction);
 	} else if (port->device_type == IO_SEGA_MULTI) {
 		multitap_check_ready(port, current_cycle);
 		if (port->device.multitap.ready_cycle != CYCLE_NEVER) {
@@ -1234,6 +1247,9 @@ void io_run(io_port *port, uint32_t current_cycle)
 		port->transmit_end = new_serial_cycle + 10 * port->serial_divider;
 	}
 	port->serial_cycle = new_serial_cycle;
+	if (port->device_type == IO_GENIX_DONGLE) {
+		genix_dongle_run(port, current_cycle);
+	}
 	if (port->serial_ctrl && SCTRL_BIT_RX_ENABLE) {
 		if (port->receive_end && new_serial_cycle >= port->receive_end) {
 			port->serial_in = port->serial_receiving;
@@ -1287,6 +1303,9 @@ void io_control_write(io_port *port, uint8_t value, uint32_t current_cycle)
 			}
 		}
 		port->control = value;
+		if (port->device_type == IO_GENIX_DONGLE) {
+			genix_dongle_pins(port, get_output_value(port, current_cycle, SLOW_RISE_DEVICE), current_cycle);
+		}
 		if (port->device_type == IO_GAMEPAD6) {
 			uint8_t output = get_output_value(port, current_cycle, SLOW_RISE_DEVICE);
 			if (TH & (old_output ^ output)) {
@@ -1332,6 +1351,9 @@ void io_data_write(io_port * port, uint8_t value, uint32_t current_cycle)
 			}
 			port->device.pad.timeout_cycle = current_cycle + TH_TIMEOUT;
 		}
+		break;
+	case IO_GENIX_DONGLE:
+		genix_dongle_pins(port, output, current_cycle);
 		break;
 	case IO_MOUSE:
 		mouse_check_ready(port, current_cycle);
@@ -1829,6 +1851,10 @@ uint8_t io_data_read(io_port * port, uint32_t current_cycle)
 		device_driven = 0x7F;
 		break;
 #endif
+	case IO_GENIX_DONGLE:
+		input = genix_dongle_read(port, current_cycle);
+		device_driven = 0x6F;   /* D0-D3, TR, TH; TL is the console's */
+		break;
 	default:
 		input = 0;
 		device_driven = 0;

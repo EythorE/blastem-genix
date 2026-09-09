@@ -26,7 +26,8 @@ enum {
 	IO_SEGA_PARALLEL,
 	IO_GENERIC,
 	IO_GENERIC_SERIAL,
-	IO_HEARTBEAT_TRAINER
+	IO_HEARTBEAT_TRAINER,
+	IO_GENIX_DONGLE  /* genix/genix_dongle.c */
 };
 
 typedef struct io_port io_port;
@@ -77,6 +78,9 @@ struct io_port {
 			uint8_t  cmd;
 			uint8_t  remaining_bytes;
 		} heartbeat_trainer;
+		struct {
+			void     *ctx;
+		} genix;
 		struct {
 			io_port  *ports;
 			uint32_t ready_cycle;
