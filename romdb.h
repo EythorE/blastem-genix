@@ -56,6 +56,7 @@ enum {
 	MAPPER_SMS_CODEMASTERS,
 	MAPPER_SMS_SUPER_GAME_30,
 	MAPPER_RADICA,
+	MAPPER_GENIX_CART,   /* genix/genix_cart.c */
 };
 
 

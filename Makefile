@@ -289,7 +289,11 @@ GENIX_LINK_FILES:=genix/link/frame.h genix/link/frame.c genix/link/script.h geni
 	genix/link/link_tx.h genix/link/link_tx.c genix/link/link_rx.h
 GENIX_LINK_SHA:=$(shell cat $(GENIX_LINK_FILES) | sha256sum | cut -c1-16)
 CFLAGS+= -DGENIX_LINK_SHA=\"$(GENIX_LINK_SHA)\"
-GENIXOBJS:=genix/genix_dongle.o genix/link/frame.o genix/link/script.o genix/link/link_tx.o
+GENIX_CART_FILES:=genix/cart/sdcard.h genix/cart/sdcard.c genix/cart/sdengine.h genix/cart/sdengine.c
+GENIX_CART_SHA:=$(shell cat $(GENIX_CART_FILES) | sha256sum | cut -c1-16)
+CFLAGS+= -DGENIX_CART_SHA=\"$(GENIX_CART_SHA)\"
+GENIXOBJS:=genix/genix_dongle.o genix/link/frame.o genix/link/script.o genix/link/link_tx.o \
+	genix/genix_cart.o genix/cart/sdcard.o genix/cart/sdengine.o
 
 COREOBJS:=system.o genesis.o vdp.o io.o romdb.o hash.o xband.o realtec.o i2c.o nor.o $(M68KOBJS) $(GENIXOBJS) \
 	sega_mapper.o multi_game.o megawifi.o $(NET) serialize.o $(TERMINAL) $(CONFIGOBJS) gst.o \
@@ -389,11 +393,11 @@ endif
 $(OBJDIR) :
 	mkdir -p $(OBJDIR)/nuklear_ui
 	mkdir -p $(OBJDIR)/zlib
-	mkdir -p $(OBJDIR)/genix/link
+	mkdir -p $(OBJDIR)/genix/link $(OBJDIR)/genix/cart
 
 $(LIBOBJDIR) :
 	mkdir -p $(LIBOBJDIR)/zlib
-	mkdir -p $(LIBOBJDIR)/genix/link
+	mkdir -p $(LIBOBJDIR)/genix/link $(LIBOBJDIR)/genix/cart
 
 libblastem.$(SO) : $(LIBOBJS:%.o=$(LIBOBJDIR)/%.o)
 	$(CC) -shared -o $@ $^ $(LDFLAGS)

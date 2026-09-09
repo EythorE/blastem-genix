@@ -19,6 +19,7 @@
 #include "saves.h"
 #include "bindings.h"
 #include "jcart.h"
+#include "genix/genix_cart.h"
 #include "radica.h"
 #include "config.h"
 #include "event_log.h"
@@ -625,6 +626,8 @@ static m68k_context *sync_components(m68k_context * context, uint32_t address)
 			io_adjust_cycles(gen->io.ports+2, context->cycles, deduction);
 			if (gen->mapper_type == MAPPER_JCART) {
 				jcart_adjust_cycles(gen, deduction);
+			} else if (gen->mapper_type == MAPPER_GENIX_CART) {
+				genix_cart_adjust_cycles(gen, deduction);
 			}
 			context->cycles -= deduction;
 			z80_adjust_cycles(z_context, deduction);
@@ -3202,6 +3205,8 @@ static genesis_context *shared_init_gen(rom_info info, void *lock_on, uint32_t l
 		}
 	} else if (gen->mapper_type == MAPPER_RADICA) {
 		radica_reset(gen);
+	} else if (gen->mapper_type == MAPPER_GENIX_CART) {
+		genix_cart_reset(gen);
 	}
 	gen->reset_cycle = CYCLE_NEVER;
 
@@ -3545,6 +3550,8 @@ genesis_context* alloc_config_pico(void *rom, uint32_t rom_size, void *lock_on, 
 		}
 	} else if (gen->mapper_type == MAPPER_RADICA) {
 		radica_reset(gen);
+	} else if (gen->mapper_type == MAPPER_GENIX_CART) {
+		genix_cart_reset(gen);
 	}
 	gen->reset_cycle = CYCLE_NEVER;
 

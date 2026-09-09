@@ -10,6 +10,7 @@
 #include "realtec.h"
 #include "nor.h"
 #include "sega_mapper.h"
+#include "genix/genix_cart.h"
 #include "multi_game.h"
 #include "megawifi.h"
 #include "jcart.h"
@@ -1492,6 +1493,9 @@ rom_info configure_rom_32x(tern_node *rom_db, void *vrom, uint32_t rom_size, voi
 rom_info configure_rom(tern_node *rom_db, void *vrom, uint32_t rom_size, void *lock_on, uint32_t lock_on_size, memmap_chunk const *base_map, uint32_t base_chunks)
 {
 	uint8_t *rom = vrom;
+	if (genix_cart_wanted(rom, rom_size)) {
+		return genix_cart_configure_rom(rom, rom_size, base_map, base_chunks);
+	}
 	tern_node *entry = find_romdb_entry_gen(rom_db, rom, rom_size);
 	if (!entry) {
 		debug_message("Not found in ROM DB, examining header\n\n");

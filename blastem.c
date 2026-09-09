@@ -44,6 +44,7 @@
 
 #include "version.inc"
 #include "genix/genix_dongle.h"
+#include "genix/genix_cart.h"
 
 #ifdef __ANDROID__
 #define FULLSCREEN_DEFAULT 1
@@ -483,6 +484,13 @@ int main(int argc, char ** argv)
 				}
 				genix_dongle_spec = argv[i];
 				break;
+			case 'C':
+				i++;
+				if (i >= argc) {
+					fatal_error("-C must be followed by a card image path or none (genix cart)\n");
+				}
+				genix_cart_spec = argv[i];
+				break;
 			case 'r':
 				i++;
 				if (i >= argc) {
@@ -575,6 +583,8 @@ int main(int argc, char ** argv)
 					"	-n          Disable Z80\n"
 					"	-M SPEC     Genix MIDI dongle on port 2 (SPEC: a frame stream file,\n"
 					"	            midi:<path> for raw MIDI bytes; ,latency=<us>)\n"
+					"	-C SPEC     Genix production cart mapper (SPEC: a card image or none;\n"
+					"	            ,dip=1 ,dump=<path>[:<bytes>] ,trace=<n>)\n"
 					"	-v          Display version number and exit\n"
 					"	-l          Log 68K code addresses (useful for assemblers)\n"
 					"	-y          Log individual YM-2612 channels to WAVE files\n"

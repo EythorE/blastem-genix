@@ -87,11 +87,32 @@ any direction change.  The device therefore takes TL as the
 console's latch while the console drives the pin and as the pull-up
 (high) otherwise, which is what the wire does.
 
-### Planned
+### The production cart mapper (2026-09-09)
 
-- The production cartridge mapper and SD card model:
-  genix/hardware/production-cart/design.md secs 4-6. Plan:
-  genix/docs/plans/production-cart.md sec 8.
+`genix/genix_cart.c` is the Genix production cartridge
+(genix/hardware/production-cart/design.md secs 4-6, plan
+genix/docs/plans/production-cart.md sec 8): two 2 MB slots over the
+flash image and 8 MB of PSRAM in four banks (RAM_ON and the BANK
+fields steer two pointer chunks; writes go through functions that
+write PSRAM or count a flash write), the CTRL/BANK/DOUT/STATUS/DATA/
+SRM_ON registers in the /TIME window, and the SD engine with a card
+behind it: `genix/cart/`, a checksummed copy of the Genix tree's
+`hardware/production-cart/model/` (sync it like the dongle's link/;
+`scripts/check-cart-model.sh` there is the gate).  Selected when the
+ROM header's name contains "GENIX CART", or by `-C`:
+
+    blastem -C card.img probe.bin            # a card image (mkcard.py output)
+    blastem -C none probe.bin                # no card in the socket
+    blastem -C card.img,dip=1,dump=out.bin:8192,trace=40 probe.bin
+
+`dip=` is the flash image switch, `dump=<path>[:<bytes>]` writes
+PSRAM bank 0's first bytes big-endian at exit (the ladder reads the
+probe's record there), `trace=<n>` logs the first n register
+accesses with the 68000's cycle count.  The pulse train's BUSY is
+carried across BlastEm's cycle deductions.  Upstream files touched:
+`romdb.h` (the mapper enum), `romdb.c` (one call in configure_rom),
+`genesis.c` (init reset, soft reset, the deduction), `blastem.c`
+(`-C`), the Makefile.
 
 ## Building here
 
