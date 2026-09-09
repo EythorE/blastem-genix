@@ -77,6 +77,13 @@ model's microsecond clock: the handshake nibble by nibble.  The
 frame stream's `stall` and `detach` directives freeze the dongle
 mid-frame and unplug it for a while; the device logs each one.
 
+A hand session: `-M midi:/tmp/midi` with a FIFO (`mkfifo /tmp/midi`),
+`mididump` on the console, then `printf '\x90\x3c\x64' > /tmp/midi`.
+Caveat until the Genix port model lands: BlastEm allows one device
+per port, and `-M` takes port 2 from the Saturn keyboard, so such a
+session has no keyboard to type with; the ladder types through the
+dongle's own key frames (the frame script's `type` directive).
+
 The model's clock is the master clock of the running context
 (53.69 MHz NTSC, 53.20 MHz PAL), kept as a 64-bit count across
 BlastEm's cycle deductions.  Two BlastEm facts the Genix side had
