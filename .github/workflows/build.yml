@@ -1,0 +1,140 @@
+name: Build (Linux)
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit SHA (or branch/ref) to build'
+        required: true
+        default: 'main'
+      tag:
+        description: 'Tag name to create at that commit (e.g. v2026.04.26)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - name: Resolve commit SHA
+        id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          # Enable source repositories so apt-get build-dep works.
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' \
+            /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || \
+            sudo bash -c 'cat /etc/apt/sources.list | sed "s/^deb /deb-src /" >> /etc/apt/sources.list'
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libglew-dev \
+            mercurial \
+            patchelf
+          # Pull in the full set of SDL2 build-time dev headers (X11,
+          # ALSA, PulseAudio, Wayland, DBus, OpenGL, …) so SDL2's stock
+          # configure detects them and compiles with dlopen support
+          # for each backend.  These are build-only — the resulting
+          # libSDL2 has glibc-only DT_NEEDED and dlopens at runtime.
+          sudo apt-get build-dep -y libsdl2
+
+      # Ubuntu's libsdl2-dev package builds SDL2 with --enable-X-shared=no,
+      # which hard-links libpulse/libasound/libsamplerate/X11 as DT_NEEDED.
+      # A bundled tarball built that way drags ~30 transitive runtime deps
+      # along.  Build SDL2 from upstream source instead — stock configure
+      # uses --enable-X-shared=yes (dlopen backends at runtime), so the
+      # produced libSDL2 has a clean glibc-only DT_NEEDED list and SDL2
+      # falls back gracefully when pulseaudio / X11 aren't present.  This
+      # matches what retrodev's pre-2025 BlastEm tarballs shipped.
+      - name: Build SDL2 from source
+        run: |
+          SDL2_TAG="release-2.30.0"
+          git clone --depth 1 --branch "$SDL2_TAG" \
+            https://github.com/libsdl-org/SDL.git sdl2-src
+          mkdir sdl2-prefix
+          cd sdl2-src
+          ./configure --prefix="${GITHUB_WORKSPACE}/sdl2-prefix" \
+            --disable-static
+          make -j"$(nproc)"
+          make install
+          echo "SDL2 DT_NEEDED list:"
+          readelf -d "${GITHUB_WORKSPACE}/sdl2-prefix/lib/libSDL2-2.0.so.0" \
+            | grep NEEDED
+
+      - name: Build blastem
+        run: |
+          export PKG_CONFIG_PATH="${GITHUB_WORKSPACE}/sdl2-prefix/lib/pkgconfig"
+          make
+
+      - name: Bundle release artifact
+        run: |
+          TAG="${{ inputs.tag }}"
+          case "${TAG}" in
+            blastem*) PKG="${TAG}-linux-x86_64" ;;
+            *)        PKG="blastem-${TAG}-linux-x86_64" ;;
+          esac
+          mkdir "${PKG}"
+          cp blastem "${PKG}/" || { echo "blastem binary not produced"; exit 1; }
+          for item in shaders images ui default_keys lc_overrides rom.db systems.cfg default.cfg gamecontrollerdb.txt blastem.cfg.sample CHANGELOG.txt CHANGELOG README README.md COPYING; do
+            [ -e "$item" ] && cp -r "$item" "${PKG}/" || true
+          done
+
+          # Bundle the runtime libs blastem links against that aren't in
+          # a minimal Ubuntu base image (libSDL2, libGLEW).  Without
+          # these the tarball isn't self-contained and consumers have to
+          # apt-get install matching versions.  Copy with -L to follow
+          # symlinks so we ship the real .so file, then re-create the
+          # soname symlink the dynamic loader looks up.
+          mkdir "${PKG}/lib"
+          for soname in libSDL2-2.0.so.0 libGLEW.so.2.2; do
+            real=$(ldd "${PKG}/blastem" | awk -v s="$soname" '$1 == s {print $3; exit}')
+            if [ -n "$real" ] && [ -e "$real" ]; then
+              target=$(readlink -f "$real")
+              cp "$target" "${PKG}/lib/$(basename "$target")"
+              ln -sf "$(basename "$target")" "${PKG}/lib/${soname}"
+              echo "Bundled ${soname} -> $(basename "$target")"
+            else
+              echo "WARNING: ${soname} not found in ldd output; skipping"
+            fi
+          done
+
+          # Patch the binary's RUNPATH so it finds bundled libs at
+          # $ORIGIN/lib regardless of where the user extracts the
+          # tarball.  Restores the "drop in and run" property the
+          # retrodev tarball used to have.
+          patchelf --set-rpath '$ORIGIN/lib' "${PKG}/blastem"
+
+          tar czf "${PKG}.tar.gz" "${PKG}"
+          sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
+          echo "PKG=${PKG}" >> "$GITHUB_ENV"
+
+      - name: Create tag at target commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/git/refs" \
+            -f ref="refs/tags/${{ inputs.tag }}" \
+            -f sha="${{ steps.resolve.outputs.sha }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          target_commitish: ${{ steps.resolve.outputs.sha }}
+          generate_release_notes: true
+          files: |
+            ${{ env.PKG }}.tar.gz
+            ${{ env.PKG }}.tar.gz.sha256
