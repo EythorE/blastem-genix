@@ -148,6 +148,31 @@ static io_port *find_keyboard(sega_io *io)
 	return NULL;
 }
 
+//genix: the MIDI dongle takes host key events as 0x01 key frames when
+//nothing else on the ports is a keyboard (or when keys=on says so).
+static io_port *find_genix_dongle(sega_io *io)
+{
+	for (int i = 0; i < 3; i++)
+	{
+		if (io->ports[i].device_type == IO_GENIX_DONGLE) {
+			return io->ports + i;
+		}
+	}
+	return NULL;
+}
+
+static io_port *genix_dongle_for_keys(sega_io *io)
+{
+	io_port *port = find_genix_dongle(io);
+	if (!port || !genix_dongle_keys) {
+		return NULL;
+	}
+	if (genix_dongle_keys > 0) {
+		return port;
+	}
+	return find_keyboard(io) ? NULL : port;
+}
+
 void io_port_gamepad_down(io_port *port, uint8_t button)
 {
 	gp_button_def *def = button_defs + button;
@@ -232,16 +257,24 @@ void store_key_event(io_port *keyboard_port, uint16_t code)
 void io_keyboard_down(sega_io *io, uint8_t scancode)
 {
 	store_key_event(find_keyboard(io), scancode);
+	io_port *dongle = genix_dongle_for_keys(io);
+	if (dongle) {
+		genix_dongle_key(dongle, scancode, 1);
+	}
 }
 
 void io_keyboard_up(sega_io *io, uint8_t scancode)
 {
 	store_key_event(find_keyboard(io), 0xF000 | scancode);
+	io_port *dongle = genix_dongle_for_keys(io);
+	if (dongle) {
+		genix_dongle_key(dongle, scancode, 0);
+	}
 }
 
 uint8_t io_has_keyboard(sega_io *io)
 {
-	return find_keyboard(io) != NULL;
+	return find_keyboard(io) != NULL || genix_dongle_for_keys(io) != NULL;
 }
 
 static void set_serial_clock(io_port *port)
@@ -395,7 +428,11 @@ void setup_io_devices(tern_node * config, rom_info *rom, sega_io *io)
 	char * io_2 = rom->port2_override ? rom->port2_override : tern_find_ptr_default(io_nodes, "2", "gamepad6.2");
 	char * io_ext = rom->ext_override ? rom->ext_override : tern_find_ptr(io_nodes, "ext");
 	if (genix_dongle_spec) {
-		io_2 = "genix_dongle";
+		if (genix_dongle_port() == 1) {
+			io_1 = "genix_dongle";
+		} else {
+			io_2 = "genix_dongle";
+		}
 	}
 
 	process_device(io_1, ports);

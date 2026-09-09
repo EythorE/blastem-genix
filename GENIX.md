@@ -60,29 +60,47 @@ there).  Sync the copy whenever the protocol changes:
     cp ../genix/hardware/midi-dongle/link/{frame.c,frame.h,script.c,script.h,link_tx.c,link_tx.h,link_rx.h} genix/link/
 
 Upstream files touched: `io.h` (one enum value, one union member),
-`io.c` (the device string, six call sites), `blastem.c` (the `-M`
-option and its help line), `Makefile` (the objects, the checksum,
-two mkdirs).
+`io.c` (the device string, six call sites, plus the port choice and
+the keyboard passthrough), `blastem.c` (the `-M` option and its help
+line), `Makefile` (the objects, the checksum, two mkdirs).
 
 Use:
 
     blastem -M keys.fst ROM              # a frame stream (mkframes output) on port 2
     blastem -M midi:/dev/snd/midiC1D0 ROM  # raw MIDI bytes from a device node or FIFO
+    blastem -M keys.fst,port=1 ROM       # port 1, Saturn keyboard left on port 2
     blastem -M keys.fst,latency=3,trace=200 ROM
 
-`latency=<us>` is the dongle's response latency after a TL edge
-(default 3; the board's number replaces it).  `trace=<n>` logs the
-first n port events (TL edges, offers, reads) to stderr with the
+`port=1` puts the device on controller port 1 instead of port 2
+(added 2026-09-09 with the Genix port model, which finds a device on
+either port; `io.c`'s `setup_io_devices` reads it straight off the
+spec).  `latency=<us>` is the dongle's response latency after a TL
+edge (default 3; the board's number replaces it).  `trace=<n>` logs
+the first n port events (TL edges, offers, reads) to stderr with the
 model's microsecond clock: the handshake nibble by nibble.  The
 frame stream's `stall` and `detach` directives freeze the dongle
 mid-frame and unplug it for a while; the device logs each one.
 
+HOST KEYBOARD PASSTHROUGH (2026-09-09): while the dongle holds a
+port, BlastEm's own key events are pushed into it as 0x01 key frames
+- the same priority ring the frame script's `type` directive feeds,
+and the emulated form of the product's USB keyboard path.  BlastEm's
+scancodes are already set 2, which is what the frame format and the
+Genix keyboard driver want.  It is ON BY DEFAULT whenever no other
+port has a keyboard, which is the plain `-M` case, and off when a
+Saturn keyboard is there to type on instead; `keys=off` disables it,
+`keys=on` forces it alongside a keyboard.  `io.c` gains
+`find_genix_dongle` / `genix_dongle_for_keys`, two lines each in
+`io_keyboard_down` / `io_keyboard_up`, and one in `io_has_keyboard`
+(without which BlastEm would not offer keyboard capture at all).
+
 A hand session: `-M midi:/tmp/midi` with a FIFO (`mkfifo /tmp/midi`),
 `mididump` on the console, then `printf '\x90\x3c\x64' > /tmp/midi`.
-Caveat until the Genix port model lands: BlastEm allows one device
-per port, and `-M` takes port 2 from the Saturn keyboard, so such a
-session has no keyboard to type with; the ladder types through the
-dongle's own key frames (the frame script's `type` directive).
+The dongle takes port 2 from the Saturn keyboard there, but the
+passthrough above hands the host keyboard back, so there IS something
+to type `mididump` with - press right ctrl to capture the keyboard
+first.  `-M ...,port=1` is the other way: the Saturn keyboard keeps
+port 2 and the console finds the dongle on port 1.
 
 The model's clock is the master clock of the running context
 (53.69 MHz NTSC, 53.20 MHz PAL), kept as a 64-bit count across
@@ -129,7 +147,9 @@ pkg-config at it:
 
     make -C glew-2.2.0 GLEW_DEST=$PWD/glew-2.2.0/dist install
     rm glew-2.2.0/dist/lib*/libGLEW.so*     # link it statically
-    # fix includedir= in dist/lib/pkgconfig/glew.pc to dist/include
+    # glew.pc lands with prefix=/usr: point includedir= at dist/include
+    # and libdir= at the dist lib dir the install actually used (lib64
+    # on x86-64), or pkg-config hands the compiler /usr's missing headers
     PKG_CONFIG_PATH=$PWD/glew-2.2.0/dist/lib/pkgconfig make -j8 blastem
 
 The Genix ladder runs the dongle legs with

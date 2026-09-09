@@ -34,6 +34,30 @@
 #define MARKER_SILENCE_MS 65535u
 
 char *genix_dongle_spec;
+int   genix_dongle_keys = -1;      /* auto; io.c resolves it */
+
+/* Read one ",name=<int>" out of the spec without disturbing it.  The
+ * port is wanted before any device is created (io.c's
+ * setup_io_devices), so it cannot come from the parsed options. */
+static int spec_opt(const char *name, int dflt)
+{
+    const char *p = genix_dongle_spec;
+    size_t n = strlen(name);
+
+    if (!p)
+        return dflt;
+    while ((p = strchr(p, ',')) != NULL) {
+        p++;
+        if (!strncmp(p, name, n) && p[n] == '=')
+            return atoi(p + n + 1);
+    }
+    return dflt;
+}
+
+int genix_dongle_port(void)
+{
+    return spec_opt("port", 2) == 1 ? 1 : 2;
+}
 
 typedef struct {
     link_tx_t tx;
@@ -177,8 +201,9 @@ static uint8_t *read_file(const char *path, uint32_t *len)
 
 static void announce(dongle_t *d, const char *what)
 {
-    fprintf(stderr, "genix dongle: link %s port 2 source %s latency %u us\n",
-            GENIX_LINK_SHA, what, d->latency_us);
+    fprintf(stderr, "genix dongle: link %s port %d source %s latency %u us keys %s\n",
+            GENIX_LINK_SHA, genix_dongle_port(), what, d->latency_us,
+            genix_dongle_keys < 0 ? "auto" : (genix_dongle_keys ? "on" : "off"));
     fflush(stderr);
 }
 
@@ -206,6 +231,12 @@ void genix_dongle_attach(io_port *port)
             d->latency_us = (uint32_t)atoi(opts + 8);
         } else if (!strncmp(opts, "trace=", 6)) {
             d->trace_left = (uint32_t)atoi(opts + 6);
+        } else if (!strncmp(opts, "port=", 5)) {
+            /* read by genix_dongle_port() straight off the spec */
+        } else if (!strncmp(opts, "keys=", 5)) {
+            const char *v = opts + 5;
+            genix_dongle_keys = (!strcmp(v, "on") || !strcmp(v, "1")) ? 1 :
+                                (!strcmp(v, "off") || !strcmp(v, "0")) ? 0 : -1;
         } else {
             fatal_error("genix dongle: unknown option '%s'\n", opts);
         }
@@ -376,6 +407,24 @@ static void step(dongle_t *d)
     handle_stall_arm(d);
     sched(d);
     apply(d);
+}
+
+/* HOST KEYBOARD PASSTHROUGH (midi-dongle-build.md sec 4, the corrected
+ * note): BlastEm's own key events pushed in as 0x01 key frames.  Its
+ * scancodes are already set 2 (render_sdl.c's scancode_map), which is
+ * what the frame format and the console's keyboard.c want, so this is
+ * the script `type` directive's path with a live hand on the other
+ * end.  Keys ride the priority ring, so they jump ahead of queued MIDI
+ * exactly as the product's USB keyboard does. */
+void genix_dongle_key(io_port *port, uint8_t scancode, int make)
+{
+    dongle_t *d = port->device.genix.ctx;
+    frame_t f;
+
+    if (!d || !scancode || d->floating)
+        return;
+    frame_make_key(&f, scancode, make ? 1 : 0);
+    push_frame(d, &f);
 }
 
 void genix_dongle_pins(io_port *port, uint8_t output, uint32_t current_cycle)
