@@ -4,7 +4,7 @@
  *
  * The console side of the SD engine: CTRL, BANK, DOUT, STATUS, DATA
  * and SRM_ON exactly as design.md sec 5 has them (A1 and A4 decoded,
- * so the /TIME window aliases), the four 74HC595 receive chains, the
+ * so the /TIME window aliases), the four 595 receive chains, the
  * pulse train of N clocks that follows a DATA access, and BUSY held
  * for the train's length so a DATA access issued before the pulses
  * finish returns stale data and loses its request (sec 6.1).  The
@@ -70,13 +70,16 @@ typedef struct {
 } sdengine_t;
 
 void sdengine_init(sdengine_t *e, sdcard_t *card, uint8_t dip, uint32_t cycles_per_vclk);
-/* Console reset: CTRL, BANK, SRM_ON, the request and run flops, the counter. */
+/* Behavioral reset: clears write registers and pending trains. Hardware
+ * does not reset REQ or the receive chains; this model uses deterministic
+ * chain contents. Startup code must discard them (design.md sec 6.1). */
 void sdengine_reset(sdengine_t *e);
 
 /* The /TIME window.  addr: the address's low byte (bits 1 and 4 are
  * decoded).  Word access: both halves; byte access: uwr for the even
- * address (D15-8), lwr for the odd (D7-0); a byte write to 0xA130E0
- * loads BANK, to 0xA130E1 loads CTRL, sec 5. */
+ * address (D15-8), lwr for the odd (D7-0). A byte write to E0 or E1
+ * loads BOTH BANK and CTRL with the duplicated byte; use word writes
+ * from shadows for independent updates (design.md sec 5). */
 uint16_t sdengine_read(sdengine_t *e, uint8_t addr, uint64_t cycle);
 uint8_t  sdengine_read_byte(sdengine_t *e, uint8_t addr, uint64_t cycle);
 void     sdengine_write(sdengine_t *e, uint8_t addr, uint16_t value, uint64_t cycle);

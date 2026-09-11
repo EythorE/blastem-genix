@@ -180,15 +180,16 @@ void sdengine_write_byte(sdengine_t *e, uint8_t addr, uint8_t value, uint64_t cy
 {
     settle(e, cycle);
     if (addr & 0x10) {
-        if (!(addr & 0x02) && (addr & 1))
-            e->srm_on = value & 1;         /* F1 */
+        if (!(addr & 0x02))
+            e->srm_on = value & 1;         /* F0/F1: WR_N accepts either lane */
         return;
     }
     if (!(addr & 0x02)) {
-        if (addr & 1)
-            write_ctrl(e, value);          /* E1: CTRL alone (LWR) */
-        else
-            e->bank = value;               /* E0: BANK (UWR; the 68000 duplicates the byte) */
+        /* Both 273s share CLK_CTRL. The 68000 duplicates a written
+         * byte onto both bus halves, regardless of the selected lane.
+         * Software must use word writes from the CTRL/BANK shadows. */
+        e->bank = value;
+        write_ctrl(e, value);
         return;
     }
     e->dout = value;                       /* E2/E3: DOUT */
