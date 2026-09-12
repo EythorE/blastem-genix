@@ -20,6 +20,9 @@
  *                              <bytes> (default 8192) to <path>,
  *                              big-endian: the ladder's window
  *   ...,trace=<n>              log the first n register accesses
+ *   ...,save                   at exit, write the card image (with
+ *                              the CMD24 writes) back to its file
+ *   ...,save=<path>            ... to <path> instead
  */
 #ifndef GENIX_CART_H_
 #define GENIX_CART_H_

@@ -139,6 +139,20 @@ carried across BlastEm's cycle deductions.  Upstream files touched:
 `genesis.c` (init reset, soft reset, the deduction), `blastem.c`
 (`-C`), the Makefile.
 
+SAVE (2026-09-12): the card image is malloc'd at attach and the
+model's CMD24 writes land in that copy, so without more a write
+persists within one session and not across runs (Genix plan
+production-cart.md sec 8.10 item 5).  `-C card.img,save` writes the
+whole image back to `card.img` at exit, `save=<path>` to another
+file; same atexit shape as `dump=`, and the log line says how many
+card writes it carries (`genix cart: saved N bytes of card image to
+... (card writes M)`).  Without the option the file is never
+touched, so a ladder leg does not mutate its build artifacts by
+default.  `save` with `-C none` is an error.
+
+    blastem -C card.img,save boot.bin          # write then reboot then verify
+    blastem -C card.img,save=after.img boot.bin
+
 ## Building here
 
 `make` needs SDL2 and GLEW development files (`pkg-config sdl2 glew

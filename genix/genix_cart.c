@@ -44,6 +44,7 @@ typedef struct {
     genesis_context *gen;
     char *dump_path;
     uint32_t dump_bytes;
+    char *save_path;             /* the card image is written here at exit */
     uint32_t trace_left;
     uint32_t n_flash_writes;
 } cart_t;
@@ -96,6 +97,29 @@ static void dump_at_exit(void)
             c->card.n_crc_err, c->card.n_reads, c->card.n_writes, c->n_flash_writes);
 }
 
+/* The card image back to its file (or save=<path>), all of it: the
+ * model's CMD24 writes land in the malloc'd copy, and without this
+ * nothing persists across runs.  Registered only when asked, so a
+ * ladder leg never mutates its build artifacts by default. */
+static void save_at_exit(void)
+{
+    cart_t *c = cart;
+    if (!c || !c->save_path || !c->image)
+        return;
+    FILE *f = fopen(c->save_path, "wb");
+    if (!f) {
+        fprintf(stderr, "genix cart: cannot write %s\n", c->save_path);
+        return;
+    }
+    size_t n = fwrite(c->image, 1, c->image_size, f);
+    if (fclose(f) != 0 || n != c->image_size) {
+        fprintf(stderr, "genix cart: short write on %s\n", c->save_path);
+        return;
+    }
+    fprintf(stderr, "genix cart: saved %u bytes of card image to %s (card writes %u)\n",
+            c->image_size, c->save_path, c->card.n_writes);
+}
+
 static void parse_spec(cart_t *c)
 {
     char *spec = genix_cart_spec ? strdup(genix_cart_spec) : strdup("none");
@@ -117,6 +141,10 @@ static void parse_spec(cart_t *c)
             c->dump_path = strdup(opts + 5);
         } else if (!strncmp(opts, "trace=", 6)) {
             c->trace_left = (uint32_t)atoi(opts + 6);
+        } else if (!strcmp(opts, "save")) {
+            c->save_path = strdup(source);
+        } else if (!strncmp(opts, "save=", 5)) {
+            c->save_path = strdup(opts + 5);
         } else {
             fatal_error("genix cart: unknown option '%s'\n", opts);
         }
@@ -137,14 +165,17 @@ static void parse_spec(cart_t *c)
         fclose(f);
         c->image_size = (uint32_t)n;
     }
+    if (c->save_path && !c->image)
+        fatal_error("genix cart: save needs a card image, not none\n");
     if (c->dump_bytes == 0)
         c->dump_bytes = 8192;
     if (c->dump_bytes & 1)
         c->dump_bytes++;
-    fprintf(stderr, "genix cart: model %s flash %u KB dip %u card %s (%u KB)%s%s\n",
+    fprintf(stderr, "genix cart: model %s flash %u KB dip %u card %s (%u KB)%s%s%s%s\n",
             GENIX_CART_SHA, (c->flash_mask + 1) / 1024, c->dip,
             c->image ? source : "none", c->image_size / 1024,
-            c->dump_path ? " dump " : "", c->dump_path ? c->dump_path : "");
+            c->dump_path ? " dump " : "", c->dump_path ? c->dump_path : "",
+            c->save_path ? " save " : "", c->save_path ? c->save_path : "");
     fflush(stderr);
     free(spec);
 }
@@ -291,6 +322,8 @@ rom_info genix_cart_configure_rom(uint8_t *rom, uint32_t rom_size,
     sdengine_init(&c->eng, &c->card, c->dip, MCLKS_PER_VCLK);
     if (c->dump_path)
         atexit(dump_at_exit);
+    if (c->save_path)
+        atexit(save_at_exit);
 
     info.name = strdup("Genix production cart");
     info.rom = rom;
