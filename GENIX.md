@@ -153,6 +153,22 @@ default.  `save` with `-C none` is an error.
     blastem -C card.img,save boot.bin          # write then reboot then verify
     blastem -C card.img,save=after.img boot.bin
 
+EJECT (2026-09-12): `-C card.img,eject=<frames>` pulls the card at
+that frame count (the same count `-b` uses, ~120 a second NTSC;
+`genesis.c`'s frame-end block calls `genix_cart_frame` beside the
+exit_after count).  The model's image pointer goes NULL, which is
+its no-card case and the state `-C none` starts in: STATUS reads
+card-detect high, no command gets a response, a transfer in flight
+stops with the lines released, so the Genix driver's bounded waits
+time out and print their "[sd] ... failed" / "offline" lines.  The
+mapper logs `genix cart: card ejected at frame N (... state S)` with
+the card's counters and its state at the pull (SD_RCV 6 / SD_PRG 7
+mean mid-write).  The image stays in memory for `save`; there is no
+re-insert.  Genix's "card pulled mid-write" leg (plan sec 8.4 item
+8) is the customer.
+
+    blastem -b 6000 -C card.img,eject=2500 boot.bin
+
 ## Building here
 
 `make` needs SDL2 and GLEW development files (`pkg-config sdl2 glew

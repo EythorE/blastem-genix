@@ -610,6 +610,9 @@ static m68k_context *sync_components(m68k_context * context, uint32_t address)
 				gen->header.enter_debugger_frames -= elapsed;
 			}
 		}
+		if (gen->mapper_type == MAPPER_GENIX_CART) {
+			genix_cart_frame(gen, elapsed);
+		}
 
 		if(exit_after){
 			if (elapsed >= exit_after) {

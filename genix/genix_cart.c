@@ -45,6 +45,8 @@ typedef struct {
     char *dump_path;
     uint32_t dump_bytes;
     char *save_path;             /* the card image is written here at exit */
+    uint32_t eject_at;           /* pull the card at this frame count (0 = never) */
+    uint32_t frames;             /* frames seen, the -b count */
     uint32_t trace_left;
     uint32_t n_flash_writes;
 } cart_t;
@@ -145,6 +147,10 @@ static void parse_spec(cart_t *c)
             c->save_path = strdup(source);
         } else if (!strncmp(opts, "save=", 5)) {
             c->save_path = strdup(opts + 5);
+        } else if (!strncmp(opts, "eject=", 6)) {
+            c->eject_at = (uint32_t)strtoul(opts + 6, NULL, 0);
+            if (!c->eject_at)
+                fatal_error("genix cart: eject= needs a frame count\n");
         } else {
             fatal_error("genix cart: unknown option '%s'\n", opts);
         }
@@ -167,6 +173,8 @@ static void parse_spec(cart_t *c)
     }
     if (c->save_path && !c->image)
         fatal_error("genix cart: save needs a card image, not none\n");
+    if (c->eject_at && !c->image)
+        fatal_error("genix cart: eject= needs a card image, not none\n");
     if (c->dump_bytes == 0)
         c->dump_bytes = 8192;
     if (c->dump_bytes & 1)
@@ -374,6 +382,26 @@ void genix_cart_reset(genesis_context *gen)
      * slot is a full 2 MB bank, so the mask must be the slot's.  The
      * flash image smaller than 2 MB then wraps as BlastEm does. */
     remap(c, gen->m68k);
+}
+
+/* Each frame end (the -b count).  eject= pulls the card here: the
+ * model's image pointer goes NULL, which is its no-card case (STATUS
+ * card-detect high, no response to any command, a transfer in flight
+ * stops, the lines released), the same state as -C none.  The image
+ * itself stays for save=. */
+void genix_cart_frame(genesis_context *gen, uint32_t elapsed)
+{
+    (void)gen;
+    cart_t *c = cart;
+    if (!c)
+        return;
+    c->frames += elapsed;
+    if (c->eject_at && c->frames >= c->eject_at && sdcard_present(&c->card)) {
+        c->card.image = NULL;
+        fprintf(stderr, "genix cart: card ejected at frame %u (card cmds %u, reads %u, writes %u so far, state %d)\n",
+                c->frames, c->card.n_cmd, c->card.n_reads, c->card.n_writes, c->card.state);
+        fflush(stderr);
+    }
 }
 
 void genix_cart_adjust_cycles(genesis_context *gen, uint32_t deduction)

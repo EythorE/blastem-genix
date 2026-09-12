@@ -23,6 +23,10 @@
  *   ...,save                   at exit, write the card image (with
  *                              the CMD24 writes) back to its file
  *   ...,save=<path>            ... to <path> instead
+ *   ...,eject=<frames>         pull the card at that frame count (the
+ *                              -b count): card detect reads no card,
+ *                              nothing answers, a transfer in flight
+ *                              stops - the ",none" path from then on
  */
 #ifndef GENIX_CART_H_
 #define GENIX_CART_H_
@@ -38,5 +42,6 @@ rom_info genix_cart_configure_rom(uint8_t *rom, uint32_t rom_size,
                                   memmap_chunk const *base_map, uint32_t base_chunks);
 void genix_cart_reset(genesis_context *gen);
 void genix_cart_adjust_cycles(genesis_context *gen, uint32_t deduction);
+void genix_cart_frame(genesis_context *gen, uint32_t elapsed);   /* at each frame end */
 
 #endif
