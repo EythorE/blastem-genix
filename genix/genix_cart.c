@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "genix_cart.h"
 #include "../util.h"
 #include "../m68k_core.h"
@@ -54,6 +55,9 @@ typedef struct {
     uint32_t eject_at;           /* pull the card at this frame count (0 = never) */
     uint32_t frames;             /* frames seen, the -b count */
     uint32_t trace_left;
+    struct timespec load_mtime;  /* the image file as loaded: a save over a
+                                  * file that changed since (rebuilt) is refused */
+    off_t    load_size;
     uint32_t n_flash_writes;
 } cart_t;
 
@@ -115,6 +119,23 @@ static void save_at_exit(void)
     cart_t *c = cart;
     if (!c || !c->save_path || !c->image)
         return;
+    /* The file may have been rebuilt underneath a running instance
+     * (`make cart` while a window is open): the in-memory copy is
+     * then the OLD card, and writing it back would put the old root
+     * over the new one and hide the rebuild from make (2026-09-12).
+     * Keep the run's writes in a sidecar instead. */
+    struct stat st;
+    if (stat(c->save_path, &st) == 0 &&
+        (st.st_mtim.tv_sec != c->load_mtime.tv_sec ||
+         st.st_mtim.tv_nsec != c->load_mtime.tv_nsec || st.st_size != c->load_size)) {
+        size_t len = strlen(c->save_path) + 8;
+        char *alt = malloc(len);
+        snprintf(alt, len, "%s.stale", c->save_path);
+        fprintf(stderr, "genix cart: %s changed on disk since it was loaded (rebuilt?): "
+                        "not overwritten; this run's card saved to %s\n", c->save_path, alt);
+        free(c->save_path);
+        c->save_path = alt;
+    }
     FILE *f = fopen(c->save_path, "wb");
     if (!f) {
         fprintf(stderr, "genix cart: cannot write %s\n", c->save_path);
@@ -177,6 +198,11 @@ static void parse_spec(cart_t *c)
             fatal_error("genix cart: short read on %s\n", source);
         fclose(f);
         c->image_size = (uint32_t)n;
+        struct stat st;
+        if (stat(source, &st) == 0) {
+            c->load_mtime = st.st_mtim;
+            c->load_size = st.st_size;
+        }
     }
     if (c->save_path && !c->image)
         fatal_error("genix cart: save= needs a card image, not none\n");
