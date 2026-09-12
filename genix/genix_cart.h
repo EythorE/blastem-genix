@@ -20,9 +20,11 @@
  *                              <bytes> (default 8192) to <path>,
  *                              big-endian: the ladder's window
  *   ...,trace=<n>              log the first n register accesses
- *   ...,save                   at exit, write the card image (with
- *                              the CMD24 writes) back to its file
- *   ...,save=<path>            ... to <path> instead
+ *   (default)                  at exit, write the card image (with
+ *                              the CMD24 writes) back to its file:
+ *                              a card keeps what was written
+ *   ...,nosave                 leave the file alone
+ *   ...,save=<path>            write it to <path> instead
  *   ...,eject=<frames>         pull the card at that frame count (the
  *                              -b count): card detect reads no card,
  *                              nothing answers, a transfer in flight

@@ -140,17 +140,23 @@ carried across BlastEm's cycle deductions.  Upstream files touched:
 (`-C`), the Makefile.
 
 SAVE (2026-09-12): the card image is malloc'd at attach and the
-model's CMD24 writes land in that copy, so without more a write
-persists within one session and not across runs (Genix plan
-production-cart.md sec 8.10 item 5).  `-C card.img,save` writes the
-whole image back to `card.img` at exit, `save=<path>` to another
-file; same atexit shape as `dump=`, and the log line says how many
-card writes it carries (`genix cart: saved N bytes of card image to
-... (card writes M)`).  Without the option the file is never
-touched, so a ladder leg does not mutate its build artifacts by
-default.  `save` with `-C none` is an error.
+model's CMD24 writes land in that copy, so the file only changes if
+the mapper writes it back (Genix plan production-cart.md sec 8.10
+item 5).  It does, by default: at exit the whole image goes back to
+`card.img`, the same atexit shape as `dump=`, and the log line says
+how many card writes it carries (`genix cart: saved N bytes of card
+image to ... (card writes M)`).  Persistence is the default because
+that is what a card does - what Genix wrote to it is there at the
+next boot - and what BlastEm already does for a cartridge's battery
+save; a run that must not touch the image says so.  `-C
+card.img,nosave` leaves the file alone; `save=<path>` writes the
+image to another file instead (with `nosave` it is an error); `-C
+none` never saves.  The Genix ladder runs every cart leg on a copy
+of its image in the leg's temp directory, so the build artifacts
+stay put and parallel legs do not share a card.
 
-    blastem -C card.img,save boot.bin          # write then reboot then verify
+    blastem -C card.img boot.bin               # write then reboot then verify
+    blastem -C card.img,nosave boot.bin        # a throwaway run
     blastem -C card.img,save=after.img boot.bin
 
 EJECT (2026-09-12): `-C card.img,eject=<frames>` pulls the card at
@@ -163,8 +169,8 @@ stops with the lines released, so the Genix driver's bounded waits
 time out and print their "[sd] ... failed" / "offline" lines.  The
 mapper logs `genix cart: card ejected at frame N (... state S)` with
 the card's counters and its state at the pull (SD_RCV 6 / SD_PRG 7
-mean mid-write).  The image stays in memory for `save`; there is no
-re-insert.  Genix's "card pulled mid-write" leg (plan sec 8.4 item
+mean mid-write).  The image stays in memory for the save at exit;
+there is no re-insert.  Genix's "card pulled mid-write" leg (plan sec 8.4 item
 8) is the customer.
 
     blastem -b 6000 -C card.img,eject=2500 boot.bin

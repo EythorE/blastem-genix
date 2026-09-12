@@ -47,7 +47,10 @@ typedef struct {
     genesis_context *gen;
     char *dump_path;
     uint32_t dump_bytes;
-    char *save_path;             /* the card image is written here at exit */
+    char *save_path;             /* the card image is written here at exit
+                                  * (the image file itself unless save=<path>;
+                                  * NULL with nosave or no card) */
+    uint8_t nosave;              /* the nosave option: leave the file alone */
     uint32_t eject_at;           /* pull the card at this frame count (0 = never) */
     uint32_t frames;             /* frames seen, the -b count */
     uint32_t trace_left;
@@ -104,8 +107,9 @@ static void dump_at_exit(void)
 
 /* The card image back to its file (or save=<path>), all of it: the
  * model's CMD24 writes land in the malloc'd copy, and without this
- * nothing persists across runs.  Registered only when asked, so a
- * ladder leg never mutates its build artifacts by default. */
+ * nothing persists across runs.  Registered by default, the way a
+ * real card keeps what was written and BlastEm keeps a cartridge's
+ * battery save; the nosave option leaves the file alone. */
 static void save_at_exit(void)
 {
     cart_t *c = cart;
@@ -146,8 +150,8 @@ static void parse_spec(cart_t *c)
             c->dump_path = strdup(opts + 5);
         } else if (!strncmp(opts, "trace=", 6)) {
             c->trace_left = (uint32_t)atoi(opts + 6);
-        } else if (!strcmp(opts, "save")) {
-            c->save_path = strdup(source);
+        } else if (!strcmp(opts, "nosave")) {
+            c->nosave = 1;
         } else if (!strncmp(opts, "save=", 5)) {
             c->save_path = strdup(opts + 5);
         } else if (!strncmp(opts, "eject=", 6)) {
@@ -175,18 +179,23 @@ static void parse_spec(cart_t *c)
         c->image_size = (uint32_t)n;
     }
     if (c->save_path && !c->image)
-        fatal_error("genix cart: save needs a card image, not none\n");
+        fatal_error("genix cart: save= needs a card image, not none\n");
+    if (c->save_path && c->nosave)
+        fatal_error("genix cart: save= and nosave together\n");
+    if (c->image && !c->nosave && !c->save_path)
+        c->save_path = strdup(source);     /* persistence is the default */
     if (c->eject_at && !c->image)
         fatal_error("genix cart: eject= needs a card image, not none\n");
     if (c->dump_bytes == 0)
         c->dump_bytes = 8192;
     if (c->dump_bytes & 1)
         c->dump_bytes++;
-    fprintf(stderr, "genix cart: model %s flash %u KB (image %u bytes) dip %u card %s (%u KB)%s%s%s%s\n",
+    fprintf(stderr, "genix cart: model %s flash %u KB (image %u bytes) dip %u card %s (%u KB)%s%s%s%s%s\n",
             GENIX_CART_SHA, (c->flash_mask + 1) / 1024, c->rom_size, c->dip,
             c->image ? source : "none", c->image_size / 1024,
             c->dump_path ? " dump " : "", c->dump_path ? c->dump_path : "",
-            c->save_path ? " save " : "", c->save_path ? c->save_path : "");
+            c->save_path ? " save " : "", c->save_path ? c->save_path : "",
+            c->nosave ? " nosave" : "");
     fflush(stderr);
     free(spec);
 }
@@ -395,7 +404,7 @@ void genix_cart_reset(genesis_context *gen)
  * model's image pointer goes NULL, which is its no-card case (STATUS
  * card-detect high, no response to any command, a transfer in flight
  * stops, the lines released), the same state as -C none.  The image
- * itself stays for save=. */
+ * itself stays for the save at exit. */
 void genix_cart_frame(genesis_context *gen, uint32_t elapsed)
 {
     (void)gen;
