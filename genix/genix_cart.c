@@ -37,8 +37,11 @@ typedef struct {
     uint8_t *image;
     uint32_t image_size;
     uint8_t *psram;              /* PSRAM_BANKS * SLOT, host word order */
-    uint8_t *flash;              /* the ROM buffer BlastEm loaded (byteswapped later) */
-    uint32_t flash_mask;
+    uint8_t *flash;              /* the flash chip: 2 MB, or 4 MB for a file over 2 MB
+                                  * (the DIP's second image); the ROM file copied in,
+                                  * 0xFF beyond it; BlastEm byteswaps it later */
+    uint32_t flash_mask;         /* the chip's size - 1 */
+    uint32_t rom_size;           /* the file's bytes */
     uint8_t dip;
     uint16_t ptr_lower, ptr_upper;
     genesis_context *gen;
@@ -179,8 +182,8 @@ static void parse_spec(cart_t *c)
         c->dump_bytes = 8192;
     if (c->dump_bytes & 1)
         c->dump_bytes++;
-    fprintf(stderr, "genix cart: model %s flash %u KB dip %u card %s (%u KB)%s%s%s%s\n",
-            GENIX_CART_SHA, (c->flash_mask + 1) / 1024, c->dip,
+    fprintf(stderr, "genix cart: model %s flash %u KB (image %u bytes) dip %u card %s (%u KB)%s%s%s%s\n",
+            GENIX_CART_SHA, (c->flash_mask + 1) / 1024, c->rom_size, c->dip,
             c->image ? source : "none", c->image_size / 1024,
             c->dump_path ? " dump " : "", c->dump_path ? c->dump_path : "",
             c->save_path ? " save " : "", c->save_path ? c->save_path : "");
@@ -317,13 +320,20 @@ rom_info genix_cart_configure_rom(uint8_t *rom, uint32_t rom_size,
     memset(&info, 0, sizeof info);
     cart_t *c = calloc(1, sizeof *c);
     cart = c;
-    c->flash = rom;
-    uint32_t p2 = 1;
-    while (p2 < rom_size)
-        p2 <<= 1;
-    if (p2 > 2 * SLOT)
-        p2 = 2 * SLOT;
-    c->flash_mask = p2 - 1;
+    /* The flash chip is a full buffer the file is copied into, not the
+     * file's buffer: BlastEm bakes a chunk's mask into the generated
+     * code, and a mask sized to the file would make PSRAM bank L alias
+     * at the file's size once RAM_ON swaps it into the same chunk
+     * (Genix plan production-cart.md sec 8.8 item 6).  2 MB, the slot,
+     * unless the file carries the DIP's second image; 0xFF beyond the
+     * file, an erased chip.  The buffer goes back as info.rom so the
+     * core's byteswap covers it. */
+    uint32_t flash_size = rom_size > SLOT ? 2 * SLOT : SLOT;
+    c->flash = malloc(flash_size);
+    memset(c->flash, 0xFF, flash_size);
+    memcpy(c->flash, rom, rom_size > flash_size ? flash_size : rom_size);
+    c->flash_mask = flash_size - 1;
+    c->rom_size = rom_size;
     c->psram = calloc(PSRAM_BANKS, SLOT);
     parse_spec(c);
     sdcard_init(&c->card, c->image, c->image_size);
@@ -334,8 +344,8 @@ rom_info genix_cart_configure_rom(uint8_t *rom, uint32_t rom_size,
         atexit(save_at_exit);
 
     info.name = strdup("Genix production cart");
-    info.rom = rom;
-    info.rom_size = rom_size;
+    info.rom = c->flash;
+    info.rom_size = flash_size;
     info.regions = 0;
     info.mapper_type = MAPPER_GENIX_CART;
     info.mapper_start_index = 0;
@@ -346,7 +356,7 @@ rom_info genix_cart_configure_rom(uint8_t *rom, uint32_t rom_size,
     memmap_chunk *m = info.map;
     m[0].start = 0;
     m[0].end = SLOT;
-    m[0].mask = c->flash_mask < SLOT - 1 ? c->flash_mask : SLOT - 1;
+    m[0].mask = SLOT - 1;        /* the slot's, whatever the file's size */
     m[0].flags = MMAP_READ | MMAP_PTR_IDX | MMAP_CODE;
     m[0].ptr_index = c->ptr_lower;
     m[0].buffer = c->flash;
@@ -378,9 +388,6 @@ void genix_cart_reset(genesis_context *gen)
         return;
     c->gen = gen;
     sdengine_reset(&c->eng);
-    /* the lower-slot chunk's mask was the flash's: with RAM_ON the
-     * slot is a full 2 MB bank, so the mask must be the slot's.  The
-     * flash image smaller than 2 MB then wraps as BlastEm does. */
     remap(c, gen->m68k);
 }
 

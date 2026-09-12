@@ -169,6 +169,20 @@ re-insert.  Genix's "card pulled mid-write" leg (plan sec 8.4 item
 
     blastem -b 6000 -C card.img,eject=2500 boot.bin
 
+THE LOWER-SLOT MASK (2026-09-12): the mapper used to give the
+lower-slot chunk the ROM file's power-of-two size as its address
+mask, and BlastEm bakes a chunk's mask into the generated code, so
+after RAM_ON PSRAM bank L aliased at the file's size (a 4 KB
+bootloader put the payload's record at 0xE00 instead of 0x1FFE00;
+Genix plan sec 8.8 item 6, dodged there by padding the flash image
+to 2 MB).  Now `genix_cart_configure_rom` copies the file into a
+flash buffer of the chip's size (2 MB; 4 MB when the file is over
+2 MB, the DIP's second image), fills the rest with 0xFF (an erased
+chip), hands that buffer back as `info.rom` so the core's byteswap
+covers it, and masks the lower chunk with SLOT - 1 always.  An
+unpadded flash image works; the padded one still does.  The attach
+line says both sizes: `flash 2048 KB (image 4250 bytes)`.
+
 ## Building here
 
 `make` needs SDL2 and GLEW development files (`pkg-config sdl2 glew
