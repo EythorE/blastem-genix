@@ -265,6 +265,7 @@ static void handle_command(sdcard_t *c, uint8_t idx, uint32_t arg)
             c->state = SD_TRAN;
             c->dat_drive = 0;
         }
+        c->multi = 0;
         resp_r1(c, 12, card_status(c));
         return;
     case 13:
@@ -275,6 +276,7 @@ static void handle_command(sdcard_t *c, uint8_t idx, uint32_t arg)
         resp_r1(c, 16, arg == SD_BLOCK ? card_status(c) : card_status(c) | ST_ILLEGAL);
         return;
     case 17:
+    case 18:
     case 24: {
         if (c->state != SD_TRAN) break;
         uint32_t byte_addr = c->ccs ? arg * SD_BLOCK : arg;
@@ -284,7 +286,8 @@ static void handle_command(sdcard_t *c, uint8_t idx, uint32_t arg)
         }
         c->lba = byte_addr / SD_BLOCK;
         resp_r1(c, idx, card_status(c));
-        if (idx == 17) {
+        if (idx == 17 || idx == 18) {
+            c->multi = (idx == 18);
             memcpy(c->blk, c->image + byte_addr, SD_BLOCK);
             c->n_reads++;
             start_data_out(c);
@@ -449,6 +452,16 @@ static void dat_output(sdcard_t *c)
     default:
         c->dat_drive = 0;
         c->dat_level = 0xF;
+        /* CMD18: the next block follows (its own Nac, start, data,
+         * CRC, end) until CMD12 or the end of the card. */
+        if (c->multi && (uint64_t)(c->lba + 2) * SD_BLOCK <= c->size) {
+            c->lba++;
+            memcpy(c->blk, c->image + (size_t)c->lba * SD_BLOCK, SD_BLOCK);
+            c->n_reads++;
+            start_data_out(c);
+            break;
+        }
+        c->multi = 0;
         c->state = SD_TRAN;
         break;
     }

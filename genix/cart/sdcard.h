@@ -68,6 +68,7 @@ typedef struct {
     uint16_t crc_rx[4];
     int busy_left;
     int token_ok;
+    int multi;               /* CMD18: keep sending blocks until CMD12 */
 
     /* diagnostics */
     uint32_t n_cmd, n_crc_err, n_illegal, n_reads, n_writes, n_write_crc_err;
