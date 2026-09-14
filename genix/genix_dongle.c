@@ -214,7 +214,7 @@ void genix_dongle_attach(io_port *port)
     d->cycles_per_ms = 53693175 / 1000;   /* refined from the context on first run */
     d->latency_us = GENIX_DONGLE_LATENCY_US;
     d->midi_fd = -1;
-    d->tl = 1;                              /* the console's pull-up before it drives TL */
+    d->tl = 0;                              /* an undriven TL reads LOW at the dongle (see the input model below) */
 
     char *spec = genix_dongle_spec ? strdup(genix_dongle_spec) : NULL;
     char *source = spec, *opts = NULL;
@@ -434,14 +434,22 @@ void genix_dongle_pins(io_port *port, uint8_t output, uint32_t current_cycle)
         return;
     advance(d, current_cycle);
     /* TL as the dongle's input sees it: the console's latch while the
-     * console drives the pin, else the pull-up, steady high.  Not the
-     * effective vector BlastEm computes: that restarts its slow-rise
-     * model on every control write, so an input pin with a 0 in the
-     * latch reads 0 for ~4 us after any direction change - the
-     * kernel's port initialisation (CTRL2 = 0x60) glitched TL low and
-     * back, two edges that opened the link and ate a nibble before the
-     * real attach (found 2026-09-09; a real pull-up never drops). */
-    uint8_t tl = (port->control & LINK_TL) ? ((output & LINK_TL) ? 1 : 0) : 1;
+     * console drives the pin, else LOW.  The board reads TL through a
+     * 1k/1.8k divider (its unpowered-pin protection), and that 2.8k
+     * load pulls the console's weak pull-up down to 0.27 V at the
+     * port (measured 2026-09-14 on the first assembled board), below
+     * the RP2350's input threshold: an undriven TL is a 0 at the
+     * dongle, steady.  This model said "pull-up, steady high" until
+     * then, and the kernel claimed the port with TL high on that
+     * word, which on hardware was an edge (and the attach toggle a
+     * second one, taken as an ack).  Not the effective vector BlastEm
+     * computes either: that restarts its slow-rise model on every
+     * control write, so an input pin with a 0 in the latch reads 0
+     * for ~4 us after any direction change - the kernel's port
+     * initialisation (CTRL2 = 0x60) glitched TL low and back, two
+     * edges that opened the link and ate a nibble before the real
+     * attach (found 2026-09-09). */
+    uint8_t tl = (port->control & LINK_TL) ? ((output & LINK_TL) ? 1 : 0) : 0;
     trace(d, tl != d->tl ? "tl edge ->" : "pins", tl, output);
     d->tl = tl;
     if (!d->floating && !d->frozen) {
