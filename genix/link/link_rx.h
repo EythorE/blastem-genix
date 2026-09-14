@@ -17,9 +17,13 @@
  * binds them to a simulated dongle running link_tx.c.  Rules, the
  * counterpart of link_tx.h's:
  *
- *  a. ATTACH: TL becomes an output; sample TR as "last VALID"; then
- *     TOGGLE TL, so a dongle whose offer went stale re-offers its
- *     frame from the first nibble.
+ *  a. ATTACH: TL becomes an output at the level an undriven TL
+ *     shows the dongle - LOW: the board's TL divider loads the
+ *     console's pull-up to 0.27 V (measured 2026-09-14), so the claim
+ *     is no edge; sample TR as "last VALID"; then TOGGLE TL, so a
+ *     dongle whose offer went stale re-offers its frame from the
+ *     first nibble.  Release drives TL low before letting go, for
+ *     the same reason.
  *  b. A nibble is taken when TR differs from last VALID: latch D0-D3,
  *     record TR, toggle TL.
  *  c. A frame is [type][len][payload] as nibbles, low first; the
